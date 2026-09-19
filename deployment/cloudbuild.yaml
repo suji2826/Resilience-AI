@@ -1,0 +1,124 @@
+# ==============================================================================
+# RESILIENCE AI — Google Cloud Build CI/CD Pipeline
+# ==============================================================================
+# Automates testing, building, and deploying to Google Cloud Run
+# ==============================================================================
+
+steps:
+  # ----------------------------------------------------------------------------
+  # 1. Run Automated Backend QA & Security Tests
+  # ----------------------------------------------------------------------------
+  - name: 'python:3.11-slim'
+    id: 'backend-unit-tests'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        apt-get update && apt-get install -y --no-install-recommends build-essential libpq-dev
+        pip install --no-cache-dir -r backend/requirements.txt
+        python -m pytest backend/tests/test_api.py backend/tests/test_security.py -v --tb=short
+
+  # ----------------------------------------------------------------------------
+  # 2. Build Backend Container Image
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-backend'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/resilience-ai-backend:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/resilience-ai-backend:latest'
+      - './backend'
+
+  # ----------------------------------------------------------------------------
+  # 3. Push Backend Image to Container Registry / Artifact Registry
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-backend'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/resilience-ai-backend:latest'
+
+  # ----------------------------------------------------------------------------
+  # 4. Deploy Backend to Cloud Run
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-backend'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud run deploy resilience-ai-backend \
+          --image "gcr.io/$PROJECT_ID/resilience-ai-backend:latest" \
+          --region "${_REGION}" \
+          --platform managed \
+          --allow-unauthenticated \
+          --min-instances 1 \
+          --max-instances 10 \
+          --cpu 2 \
+          --memory 2Gi \
+          --set-env-vars "ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_REGION=${_REGION}" \
+          --set-secrets "JWT_SECRET=resilience-jwt-secret:latest,GEMINI_API_KEY=gemini-api-key-secret:latest,DATABASE_URL=resilience-db-secret:latest"
+
+  # ----------------------------------------------------------------------------
+  # 5. Build Frontend Container with Live Backend URL
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-frontend'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        BACKEND_URL=$(gcloud run services describe resilience-ai-backend --region "${_REGION}" --platform managed --format 'value(status.url)')
+        echo "Baking Backend API URL: $${BACKEND_URL} into frontend build"
+        docker build \
+          --build-arg "VITE_API_BASE_URL=$${BACKEND_URL}" \
+          -t "gcr.io/$PROJECT_ID/resilience-ai-frontend:$SHORT_SHA" \
+          -t "gcr.io/$PROJECT_ID/resilience-ai-frontend:latest" \
+          ./frontend
+
+  # ----------------------------------------------------------------------------
+  # 6. Push Frontend Image
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-frontend'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/resilience-ai-frontend:latest'
+
+  # ----------------------------------------------------------------------------
+  # 7. Deploy Frontend to Cloud Run
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-frontend'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud run deploy resilience-ai-frontend \
+          --image "gcr.io/$PROJECT_ID/resilience-ai-frontend:latest" \
+          --region "${_REGION}" \
+          --platform managed \
+          --allow-unauthenticated \
+          --min-instances 1 \
+          --max-instances 10 \
+          --cpu 1 \
+          --memory 1Gi
+
+        FRONTEND_URL=$(gcloud run services describe resilience-ai-frontend --region "${_REGION}" --platform managed --format 'value(status.url)')
+        echo "Updating Backend CORS with Frontend Origin: $${FRONTEND_URL}"
+        gcloud run services update resilience-ai-backend \
+          --region "${_REGION}" \
+          --platform managed \
+          --update-env-vars "FRONTEND_URL=$${FRONTEND_URL},BACKEND_CORS_ORIGINS=$${FRONTEND_URL}"
+
+substitutions:
+  _REGION: 'asia-south1'
+
+images:
+  - 'gcr.io/$PROJECT_ID/resilience-ai-backend:latest'
+  - 'gcr.io/$PROJECT_ID/resilience-ai-frontend:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

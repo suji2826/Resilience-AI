@@ -1,0 +1,67 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: resilience-ai-backend
+  labels:
+    cloud.googleapis.com/location: asia-south1
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: '1'
+        autoscaling.knative.dev/maxScale: '10'
+        run.googleapis.com/cpu-throttling: 'false'
+        run.googleapis.com/cloudsql-instances: '${GOOGLE_CLOUD_PROJECT}:${GOOGLE_CLOUD_REGION}:resilience-db'
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+      - image: gcr.io/${GOOGLE_CLOUD_PROJECT}/resilience-ai-backend:latest
+        ports:
+        - name: http1
+          containerPort: 8000
+        resources:
+          limits:
+            cpu: '2'
+            memory: 2Gi
+        env:
+        - name: ENV
+          value: "production"
+        - name: GOOGLE_CLOUD_PROJECT
+          value: "${GOOGLE_CLOUD_PROJECT}"
+        - name: GOOGLE_CLOUD_REGION
+          value: "${GOOGLE_CLOUD_REGION}"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: resilience-db-secret
+              key: latest
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: gemini-api-key-secret
+              key: latest
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: resilience-jwt-secret
+              key: latest
+        startupProbe:
+          httpGet:
+            path: /health/liveness
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+          timeoutSeconds: 3
+        livenessProbe:
+          httpGet:
+            path: /health/liveness
+            port: 8000
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
