@@ -45,6 +45,7 @@ class Settings(BaseSettings):
             "http://localhost:8000",
             "http://127.0.0.1:5173",
             "http://127.0.0.1:8000",
+            "https://resilience-ai-seven.vercel.app",
         ]
         if self.FRONTEND_URL:
             origins.append(self.FRONTEND_URL.rstrip("/"))
