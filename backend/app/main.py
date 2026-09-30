@@ -18,8 +18,9 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.error(f"Error creating database tables: {exc}")
 
-    # In production, do not overwrite or re-seed on every instance boot unless SEED_DB=true
-    should_seed = settings.ENV not in ("production", "staging") or os.getenv("SEED_DB", "").lower() in ("1", "true", "yes")
+    # In production/cloud environments (e.g. Render), do not run heavy auto-seeding on boot unless SEED_DB=true
+    is_cloud = bool(os.getenv("RENDER") or os.getenv("PORT") or settings.ENV in ("production", "staging"))
+    should_seed = os.getenv("SEED_DB", "").lower() in ("1", "true", "yes") or (not is_cloud and settings.ENV == "development")
     if should_seed:
         db = SessionLocal()
         try:

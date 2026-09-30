@@ -764,7 +764,12 @@ class SyntheticDataGenerator:
                     )
                     db.add(mc)
                     mc_count += 1
+                    if mc_count % 5000 == 0:
+                        db.flush()
+                        db.expunge_all()
 
+        db.flush()
+        db.expunge_all()
         return ff_count, mc_count
 
     # -----------------------------------------------------------------------
