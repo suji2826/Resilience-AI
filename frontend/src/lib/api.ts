@@ -2,9 +2,11 @@ import { CopilotResponse } from '../types';
 import { MOCK_DASHBOARD, MOCK_HEALTH, MOCK_USER } from './mockData';
 
 const envApiUrl = import.meta.env.VITE_API_BASE_URL;
+// Fallback to the deployed Render backend if no env var is set
+const RENDER_BACKEND = 'https://resilience-ai-euhn.onrender.com';
 const API_BASE = envApiUrl
   ? (envApiUrl.endsWith('/api') ? envApiUrl : `${envApiUrl.replace(/\/$/, '')}/api`)
-  : '/api';
+  : `${RENDER_BACKEND}/api`;
 
 export type ApiErrorKind =
   | 'NETWORK_ERROR'
