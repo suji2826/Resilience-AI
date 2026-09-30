@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, UserRole } from '../types';
-import { api } from '../lib/api';
+import { api, MOCK_USER } from '../lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -35,7 +35,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('resilience_token', data.access_token);
       localStorage.setItem('resilience_user', JSON.stringify(data.user));
       setUser(data.user);
-    } catch (err) {
+    } catch (err: any) {
+      // If backend is unreachable, fall back to a local demo session
+      if (err?.kind === 'NETWORK_ERROR' || err?.name === 'TypeError') {
+        console.warn('[Auth] Backend unreachable — activating offline demo session.');
+        const demoUser = { ...MOCK_USER, email } as User;
+        localStorage.setItem('resilience_token', 'offline-demo-token');
+        localStorage.setItem('resilience_user', JSON.stringify(demoUser));
+        setUser(demoUser);
+        return;
+      }
       console.error('Login error:', err);
       localStorage.removeItem('resilience_token');
       localStorage.removeItem('resilience_user');
@@ -67,20 +76,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async function initAuth() {
       const token = localStorage.getItem('resilience_token');
       if (token) {
-        // Validate existing token
-        try {
-          const me = await api.getMe();
-          if (isMounted && me && me.email) {
-            setUser(me);
-            return;
+        // Validate existing token (skip if it's an offline demo token)
+        if (token === 'offline-demo-token') {
+          const saved = localStorage.getItem('resilience_user');
+          if (saved) {
+            try { setUser(JSON.parse(saved)); return; } catch { /* ignore */ }
           }
-        } catch {
-          // Token is stale / expired
-          console.warn('[Auth] Stale token detected on mount. Refreshing demo session...');
+        } else {
+          try {
+            const me = await api.getMe();
+            if (isMounted && me && me.email) {
+              setUser(me);
+              return;
+            }
+          } catch {
+            // Token is stale / expired
+            console.warn('[Auth] Stale token detected on mount. Refreshing demo session...');
+          }
         }
       }
 
-      // Establish fresh session
+      // Establish fresh session (falls back to offline demo if backend down)
       try {
         await login('national.admin@resilience.gov.in', 'resilience2026');
       } catch (e) {

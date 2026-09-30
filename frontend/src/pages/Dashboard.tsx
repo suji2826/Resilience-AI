@@ -28,7 +28,7 @@ import {
   CartesianGrid,
 } from 'recharts';
 
-import { api, ApiError } from '../lib/api';
+import { api, ApiError, isOfflineMode } from '../lib/api';
 import { StatCard } from '../components/common/StatCard';
 import { IndiaMap } from '../components/map/IndiaMap';
 import { Badge } from '../components/common/Badge';
@@ -108,7 +108,14 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* 1. National Healthcare Resource Overview Header */}
+      {/* Offline Demo Mode Banner */}
+      {isOfflineMode() && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs bg-amber-50 dark:bg-amber-950/30 border border-amber-400/40 text-amber-800 dark:text-amber-300">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+          <strong className="font-bold">Offline Demo Mode:</strong>
+          <span>Backend API not reachable — displaying synthetic demonstration data. Deploy the FastAPI backend and set <code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded">VITE_API_BASE_URL</code> in Vercel to connect to live data.</span>
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-command-border dark:border-navy-border">
         <div>
           <div className="flex items-center gap-2.5 flex-wrap">

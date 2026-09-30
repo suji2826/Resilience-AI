@@ -1,4 +1,5 @@
 import { CopilotResponse } from '../types';
+import { MOCK_DASHBOARD, MOCK_HEALTH, MOCK_USER } from './mockData';
 
 const envApiUrl = import.meta.env.VITE_API_BASE_URL;
 const API_BASE = envApiUrl
@@ -44,6 +45,13 @@ function getHeaders(): HeadersInit {
 
 // Track if an auto-refresh is in progress to avoid concurrent storms
 let isRefreshingAuth = false;
+
+// Offline / demo mode: set to true when backend is confirmed unreachable
+let _offlineMode = false;
+export const isOfflineMode = () => _offlineMode;
+export const setOfflineMode = (v: boolean) => { _offlineMode = v; };
+// Re-export mock user for use by auth layer
+export { MOCK_USER };
 let authRefreshPromise: Promise<string | null> | null = null;
 
 async function attemptDemoReauth(): Promise<string | null> {
@@ -173,7 +181,14 @@ export const api = {
     env: string;
     version: string;
   }> {
-    return requestWithRetry(`${API_BASE}/health`, { method: 'GET' }, false);
+    try {
+      const result = await requestWithRetry<any>(`${API_BASE}/health`, { method: 'GET' }, false);
+      _offlineMode = false;
+      return result;
+    } catch {
+      _offlineMode = true;
+      return MOCK_HEALTH;
+    }
   },
 
   // Auth
@@ -200,7 +215,19 @@ export const api = {
 
   // Dashboard
   async getDashboard() {
-    return requestWithRetry<any>(`${API_BASE}/dashboard`, { method: 'GET' });
+    if (_offlineMode) return MOCK_DASHBOARD;
+    try {
+      const result = await requestWithRetry<any>(`${API_BASE}/dashboard`, { method: 'GET' });
+      _offlineMode = false;
+      return result;
+    } catch (err: any) {
+      // If backend is simply unreachable (network error or unresolvable host), fall back to demo data
+      if (err?.kind === 'NETWORK_ERROR' || err?.kind === 'AUTHENTICATION_ERROR') {
+        _offlineMode = true;
+        return MOCK_DASHBOARD;
+      }
+      throw err;
+    }
   },
 
   // PHCs
